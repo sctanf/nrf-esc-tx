@@ -1,0 +1,132 @@
+// Copyright (c) 2024 Nordic Semiconductor ASA
+// SPDX-License-Identifier: Apache-2.0
+
+/dts-v1/;
+#include <nordic/nrf52840_qiaa.dtsi>
+
+/ {
+	model = "nrf-esc-supermini";
+	compatible = "nrf-esc-supermini";
+
+	chosen {
+		zephyr,sram = &sram0;
+		zephyr,flash = &flash0;
+		zephyr,code-partition = &slot0_partition;
+		zephyr,display = &ssd1306;
+	};
+	
+	battery-divider {
+		compatible = "voltage-divider";
+		status = "okay";
+		io-channels = <&adc 12>; // Measure VDDHDIV5
+		output-ohms = <1>;
+		full-ohms = <5>;
+	};
+
+	zephyr,user {
+		led-gpios = <&gpio0 15 GPIO_OPEN_SOURCE>;
+		oled-gpios = <&gpio0 31 (GPIO_ACTIVE_LOW | GPIO_OPEN_DRAIN | (1 << 8))>;
+	};
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+	};
+};
+
+&flash0 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		boot_partition: partition@0 {
+			label = "mcuboot";
+			reg = <0x0 0xc000>;
+		};
+		slot0_partition: partition@c000 {
+			label = "image-0";
+			reg = <0xc000 0x72000>;
+		};
+		slot1_partition: partition@7e000 {
+			label = "image-1";
+			reg = <0x7e000 0x72000>;
+		};
+		scratch_partition: partition@f0000 {
+			label = "image-scratch";
+			reg = <0xf0000 0xa000>;
+		};
+		storage_partition: partition@fa000 {
+			label = "storage";
+			reg = <0xfa000 0x6000>;
+		};
+	};
+};
+
+&adc {
+	status = "okay";
+};
+
+&gpiote {
+	status = "okay";
+};
+
+&gpio0 {
+	status = "okay";
+};
+
+&gpio1 {
+	status = "okay";
+};
+
+
+&pinctrl {
+
+    i2c0_sleep: i2c0_sleep {
+        group1 {
+			psels = <NRF_PSEL(TWIM_SCL, 0, 29)>, <NRF_PSEL(TWIM_SDA, 0, 2)>;
+            low-power-enable;
+        };
+    };
+
+	i2c0_default: i2c0_default {
+		group1 {
+			psels = <NRF_PSEL(TWIM_SCL, 0, 29)>, <NRF_PSEL(TWIM_SDA, 0, 2)>;
+		};
+	};
+};
+
+&i2c0 {
+	compatible = "nordic,nrf-twi";
+	status = "okay";
+	clock-frequency = <I2C_BITRATE_FAST>;
+  
+    ssd1306: ssd1306@3c {
+        compatible = "solomon,ssd1306fb";
+        reg = <0x3c>; //0x3c is the i2c address of the display controller IC, SSD1306.
+        width = <128>; // Width of the display.
+        height = <32>; // Height of the display. Change to '64' when using the 128x64 pixel version.
+        segment-offset = <0>;
+        page-offset = <0>;
+        display-offset = <0>;
+        multiplex-ratio = <31>; //change to '63' when using the 128x64 pixel version
+        segment-remap;
+        com-invdir;
+        com-sequential;
+        prechargep = <0x22>;
+	// add more driver settings here
+    };
+
+	pinctrl-0 = <&i2c0_default>;
+	pinctrl-1 = <&i2c0_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+&cryptocell {
+	status = "disabled";
+};
+
+&nfct {
+	status = "disabled";
+};

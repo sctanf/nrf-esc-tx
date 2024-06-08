@@ -1,0 +1,12 @@
+{
+    "files.associations": {
+        "mymathlib_matrix.h": "c",
+        "poweroff.h": "c",
+        "icm42688.h": "c",
+        "stdlib.h": "c",
+        "adafruit_gfx.h": "c",
+        "ssd1306.h": "c"
+    },
+    "nrf-connect.toolchain.path": "${nrf-connect.toolchain:2.6.0}",
+    "nrf-connect.topdir": "${nrf-connect.sdk:2.6.0}"
+}
