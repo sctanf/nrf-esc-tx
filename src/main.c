@@ -259,10 +259,10 @@ void main_thread(void) {
 				for (uint16_t i = 0; i < 4; i++) {
 					tx_payload.data[i] = 0;
 				}
-				tx_payload.data[0] = 0;
-				tx_payload.data[1] = 0 << 4;
-				tx_payload.data[2] = batt;
-				tx_payload.data[3] = batt_v;
+				tx_payload.data[0] = (raw >> 8) && 0xff;
+				tx_payload.data[1] = raw && 0xff;
+				tx_payload.data[2] = (raw >> 8) && 0xff;
+				tx_payload.data[3] = raw && 0xff;
 				esb_flush_tx();
 				esb_write_payload(&tx_payload); // Add transmission to queue
 				send_data = true;
