@@ -52,7 +52,7 @@ static struct nvs_fs fs;
 #define PAIRED_ID 2
 
 static struct esb_payload rx_payload;
-static struct esb_payload tx_payload = ESB_CREATE_PAYLOAD(0, 0, 0, 0, 0);
+static struct esb_payload tx_payload = ESB_CREATE_PAYLOAD(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 static struct esb_payload tx_payload_pair = ESB_CREATE_PAYLOAD(0, 0, 0, 0, 0, 0, 0, 0, 0);
 
 // this was randomly generated
@@ -79,7 +79,7 @@ uint32_t batt_pptt;
 
 bool main_running = false;
 
-unsigned int last_pot[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+unsigned int last_pot[4] = {0,0,0,0};
 unsigned int last_batt_pptt[16] = {10001,10001,10001,10001,10001,10001,10001,10001,10001,10001,10001,10001,10001,10001,10001,10001};
 int8_t last_pot_i = 0;
 int8_t last_batt_pptt_i = 0;
@@ -209,77 +209,6 @@ void power_check(void) {
 const struct device *pot_adc = DEVICE_DT_GET(DT_IO_CHANNELS_CTLR(ZEPHYR_USER_NODE));
 int16_t raw;
 
-void main_thread(void) {
-	struct adc_sequence asp = {
-		.channels = BIT(0),
-		.buffer = &raw,
-		.buffer_size = sizeof(raw),
-		.oversampling = 4,
-		.calibrate = true,
-	};
-	asp.resolution = 14;
-	struct adc_channel_cfg accp = {
-		.gain = ADC_GAIN_1_6,
-		.reference = ADC_REF_INTERNAL,
-		.acquisition_time = ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 40),
-	};
-	accp.input_positive = SAADC_CH_PSELP_PSELP_AnalogInput0;
-	adc_channel_setup(pot_adc, &accp);
-	gpio_pin_configure_dt(&pot_en, GPIO_OUTPUT);
-	k_sleep(K_FOREVER);
-	main_running = true;
-	while (1) {
-		gpio_pin_set_dt(&pot_en, 1);
-		adc_channel_setup(pot_adc, &accp);
-		uint64_t pot_total = 0;
-		for (int i = 0; i < 4; i++) {
-			adc_read(pot_adc, &asp);
-			pot_total += raw;
-		}
-		gpio_pin_set_dt(&pot_en, 0);
-		last_pot[last_pot_i] = pot_total;
-		last_pot_i++;
-		last_pot_i %= 3;
-		for (uint8_t i = 0; i < 3; i++) {  // Average battery readings across 16 samples
-			if (last_pot[i] == 0) {
-				pot_total += pot_total / (i + 1);
-			} else {
-				pot_total += last_pot[i];
-			}
-		}
-		pot_total /= 16;
-		float pot_total_out = ((float)pot_total - 200.0) / 14900.0;
-		pot_total_out -= 0.5;
-		pot_total_out *= 2;
-		pot_total_out *= 32767;
-		if (pot_total_out < -32768) pot_total_out = -32768;
-		if (pot_total_out > 32767) pot_total_out = 32767;
-		raw = pot_total_out;
-		asp.calibrate = false;
-				for (uint16_t i = 0; i < 4; i++) {
-					tx_payload.data[i] = 0;
-				}
-				tx_payload.data[0] = (raw >> 8) & 0xff;
-				tx_payload.data[1] = raw & 0xff;
-				tx_payload.data[2] = (raw >> 8) & 0xff;
-				tx_payload.data[3] = raw & 0xff;
-				esb_flush_tx();
-				esb_write_payload(&tx_payload); // Add transmission to queue
-				send_data = true;
-		main_running = false;
-		k_sleep(K_FOREVER);
-		main_running = true;
-	}
-}
-
-K_THREAD_DEFINE(main_thread_id, 4096, main_thread, NULL, NULL, NULL, 7, 0, 0);
-
-void wait_for_threads(void) {
-	while (main_running) {
-		k_usleep(1);
-	}
-}
-
 #include <zephyr/init.h>
 
 int32_t reset_reason;
@@ -315,6 +244,23 @@ int main(void)
 	fs.sector_size = info.size; // Sector size equal to page size
 	fs.sector_count = 4U; // 4 sectors
 	nvs_mount(&fs);
+
+	struct adc_sequence asp = {
+		.channels = BIT(0),
+		.buffer = &raw,
+		.buffer_size = sizeof(raw),
+		.oversampling = 4,
+		.calibrate = true,
+	};
+	asp.resolution = 14;
+	struct adc_channel_cfg accp = {
+		.gain = ADC_GAIN_1_6,
+		.reference = ADC_REF_INTERNAL,
+		.acquisition_time = ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 40),
+	};
+	accp.input_positive = SAADC_CH_PSELP_PSELP_AnalogInput0;
+	adc_channel_setup(pot_adc, &accp);
+	gpio_pin_configure_dt(&pot_en, GPIO_OUTPUT);
 
 	int32_t count = 0U;
 	char count_str[16] = {0};
@@ -486,8 +432,40 @@ int main(void)
 		else {batt_pptt = last_batt_pptt[15];} // Effectively 100-10000 -> 1-100%
 		int batt = (int)((float)batt_pptt/100.0);
 
-		wait_for_threads();
-		k_wakeup(main_thread_id);
+		gpio_pin_set_dt(&pot_en, 1);
+		adc_channel_setup(pot_adc, &accp);
+		uint64_t pot_total = 0;
+		for (int i = 0; i < 4; i++) {
+			adc_read(pot_adc, &asp);
+			pot_total += raw;
+		}
+		gpio_pin_set_dt(&pot_en, 0);
+		last_pot[last_pot_i] = pot_total;
+		last_pot_i++;
+		last_pot_i %= 3;
+		for (uint8_t i = 0; i < 3; i++) {  // Average battery readings across 16 samples
+			if (last_pot[i] == 0) {
+				pot_total += pot_total / (i + 1);
+			} else {
+				pot_total += last_pot[i];
+			}
+		}
+		pot_total /= 16;
+		float pot_total_out = ((float)pot_total - 200.0) / 14900.0;
+		pot_total_out -= 0.5;
+		pot_total_out *= 2;
+		pot_total_out *= 32767;
+		if (pot_total_out < -32768) pot_total_out = -32768;
+		if (pot_total_out > 32767) pot_total_out = 32767;
+		raw = pot_total_out;
+		asp.calibrate = false;
+		tx_payload.data[0] = (raw >> 8) & 0xff;
+		tx_payload.data[1] = raw & 0xff;
+		tx_payload.data[2] = (raw >> 8) & 0xff;
+		tx_payload.data[3] = raw & 0xff;
+		esb_flush_tx();
+		esb_write_payload(&tx_payload); // Add transmission to queue
+		esb_start_tx();
 
 	    lv_obj_set_style_base_dir(pwm_bar, (raw > 0) ? LV_BASE_DIR_LTR : LV_BASE_DIR_RTL, 0);
     	lv_bar_set_value(pwm_bar, abs(raw), LV_ANIM_OFF);
