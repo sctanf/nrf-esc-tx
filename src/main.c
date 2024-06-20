@@ -69,6 +69,7 @@ uint8_t reset_mode = -1;
 #define ZEPHYR_USER_NODE DT_PATH(zephyr_user)
 const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(ZEPHYR_USER_NODE, led_gpios);
 const struct gpio_dt_spec oled = GPIO_DT_SPEC_GET(ZEPHYR_USER_NODE, oled_gpios);
+const struct gpio_dt_spec pot_en = GPIO_DT_SPEC_GET(ZEPHYR_USER_NODE, pot_gpios);
 
 int tickrate = 5;
 
@@ -78,7 +79,9 @@ uint32_t batt_pptt;
 
 bool main_running = false;
 
+unsigned int last_pot[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 unsigned int last_batt_pptt[16] = {10001,10001,10001,10001,10001,10001,10001,10001,10001,10001,10001,10001,10001,10001,10001,10001};
+int8_t last_pot_i = 0;
 int8_t last_batt_pptt_i = 0;
 bool system_off_main = false;
 bool send_data = false;
@@ -196,11 +199,63 @@ void power_check(void) {
 	LOG_INF("Battery %u%% (%dmV)", batt_pptt/100, batt_mV);
 }
 
+#include <zephyr/kernel.h>
+#include <zephyr/init.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/adc.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/logging/log.h>
+
+const struct device *pot_adc = DEVICE_DT_GET(DT_IO_CHANNELS_CTLR(ZEPHYR_USER_NODE));
+int16_t raw;
+
 void main_thread(void) {
-k_sleep(K_FOREVER);
+	struct adc_sequence asp = {
+		.channels = BIT(0),
+		.buffer = &raw,
+		.buffer_size = sizeof(raw),
+		.oversampling = 4,
+		.calibrate = true,
+	};
+	asp.resolution = 14;
+	struct adc_channel_cfg accp = {
+		.gain = ADC_GAIN_1_6,
+		.reference = ADC_REF_INTERNAL,
+		.acquisition_time = ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 40),
+	};
+	accp.input_positive = SAADC_CH_PSELP_PSELP_AnalogInput0;
+	adc_channel_setup(pot_adc, &accp);
+	gpio_pin_configure_dt(&pot_en, GPIO_OUTPUT);
+	k_sleep(K_FOREVER);
 	main_running = true;
 	while (1) {
-			if (true) {
+		gpio_pin_set_dt(&pot_en, 1);
+		adc_channel_setup(pot_adc, &accp);
+		uint64_t pot_total = 0;
+		for (int i = 0; i < 4; i++) {
+			adc_read(pot_adc, &asp);
+			pot_total += raw;
+		}
+		gpio_pin_set_dt(&pot_en, 0);
+		last_pot[last_pot_i] = pot_total;
+		last_pot_i++;
+		last_pot_i %= 3;
+		for (uint8_t i = 0; i < 3; i++) {  // Average battery readings across 16 samples
+			if (last_pot[i] == 0) {
+				pot_total += pot_total / (i + 1);
+			} else {
+				pot_total += last_pot[i];
+			}
+		}
+		pot_total /= 16;
+		float pot_total_out = ((float)pot_total - 200.0) / 14900.0;
+		pot_total_out -= 0.5;
+		pot_total_out *= 2;
+		pot_total_out *= 32767;
+		if (pot_total_out < -32768) pot_total_out = -32768;
+		if (pot_total_out > 32767) pot_total_out = 32767;
+		raw = pot_total_out;
+		asp.calibrate = false;
 				for (uint16_t i = 0; i < 4; i++) {
 					tx_payload.data[i] = 0;
 				}
@@ -211,7 +266,6 @@ k_sleep(K_FOREVER);
 				esb_flush_tx();
 				esb_write_payload(&tx_payload); // Add transmission to queue
 				send_data = true;
-			}
 		main_running = false;
 		k_sleep(K_FOREVER);
 		main_running = true;
@@ -314,7 +368,7 @@ int main(void)
 
 	pwm_bar = lv_bar_create(lv_scr_act());
     lv_obj_set_size(pwm_bar, 128, 8);
-	lv_bar_set_range(pwm_bar, 0, 128);
+	lv_bar_set_range(pwm_bar, 0, 32767);
     lv_obj_set_style_base_dir(pwm_bar, LV_BASE_DIR_RTL, 0);
     lv_bar_set_value(pwm_bar, 0, LV_ANIM_OFF);
 	lv_obj_align(pwm_bar, LV_ALIGN_BOTTOM_MID, 0, 0);
@@ -416,16 +470,6 @@ int main(void)
 
 		int batt_mV;
 		batt_pptt = read_batt_mV(&batt_mV);
-
-		if (batt_pptt == 0)
-		{
-			LOG_INF("Waiting for system off (Low battery)");
-			wait_for_threads();
-			LOG_INF("Shutdown");
-			// Turn off LED
-			gpio_pin_set_dt(&led, 0);
-			configure_system_off();
-		}
 		last_batt_pptt[last_batt_pptt_i] = batt_pptt;
 		last_batt_pptt_i++;
 		last_batt_pptt_i %= 15;
@@ -437,40 +481,27 @@ int main(void)
 			}
 		}
 		batt_pptt /= 16;
-		if (batt_pptt + 100 < last_batt_pptt[15]) {last_batt_pptt[15] = batt_pptt + 100;} // Lower bound -100pptt
-		else if (batt_pptt > last_batt_pptt[15]) {last_batt_pptt[15] = batt_pptt;} // Upper bound +0pptt
+		if (batt_pptt + 49 < last_batt_pptt[15]) {last_batt_pptt[15] = batt_pptt + 49;} // Lower bound -100pptt
+		else if (batt_pptt - 49 > last_batt_pptt[15]) {last_batt_pptt[15] = batt_pptt - 49;} // Upper bound +0pptt
 		else {batt_pptt = last_batt_pptt[15];} // Effectively 100-10000 -> 1-100%
-
-		// format for packet send
-		batt = batt_pptt / 100;
-		if (batt < 1) {batt = 1;} // Clamp to 1%
-		batt_mV /= 10;
-		batt_mV -= 245;
-		if (batt_mV < 0) {batt_v = 0;} // Very dead but it is what it is
-		else if (batt_mV > 255) {batt_v = 255;}
-		else {batt_v = batt_mV;} // 0-255 -> 2.45-5.00V
-
-		if (system_off_main) { // System off
-			LOG_INF("Waiting for system off");
-			wait_for_threads();
-			LOG_INF("Shutdown");
-			// Turn off LED
-			gpio_pin_set_dt(&led, 0);
-		}
+		int batt = (int)((float)batt_pptt/100.0);
 
 		wait_for_threads();
 		k_wakeup(main_thread_id);
 
-	    lv_obj_set_style_base_dir(pwm_bar, (count%257 - 128 > 0) ? LV_BASE_DIR_LTR : LV_BASE_DIR_RTL, 0);
-    	lv_bar_set_value(pwm_bar, abs(count%257 - 128), LV_ANIM_OFF);
-		sprintf(count_str, "%d%%", count%101);
+	    lv_obj_set_style_base_dir(pwm_bar, (raw > 0) ? LV_BASE_DIR_LTR : LV_BASE_DIR_RTL, 0);
+    	lv_bar_set_value(pwm_bar, abs(raw), LV_ANIM_OFF);
+
+		sprintf(count_str, "%d%%", batt);
 		lv_label_set_text(sys_bat_label, count_str);
+
 		sprintf(count_str, "%d%%", count%101);
 		lv_label_set_text(fan_bat_label, count_str);
-		sprintf(count_str, "%d", (count*739)%110001);
+
+		sprintf(count_str, "%d", abs((int64_t)((float)raw*110000/32767)));
 		lv_label_set_text(rpm_value_label, count_str);
+
 		lv_task_handler();
-		k_sleep(K_MSEC(1));
 		++count;
 
 		// Get time elapsed and sleep/yield until next tick

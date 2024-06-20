@@ -18,7 +18,7 @@
 
 #include "battery.h"
 
-LOG_MODULE_REGISTER(BATTERY, CONFIG_ADC_LOG_LEVEL);
+LOG_MODULE_REGISTER(BATTERY, 4);
 
 #define VBATT DT_PATH(battery_divider)
 #define ZEPHYR_USER DT_PATH(zephyr_user)
@@ -176,6 +176,8 @@ int battery_sample(void)
 		struct divider_data *ddp = &divider_data;
 		const struct divider_config *dcp = &divider_config;
 		struct adc_sequence *sp = &ddp->adc_seq;
+	struct adc_channel_cfg *accp = &ddp->adc_cfg;
+		adc_channel_setup(ddp->adc, accp);
 
 		rc = adc_read(ddp->adc, sp);
 		sp->calibrate = false;

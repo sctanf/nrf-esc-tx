@@ -26,6 +26,8 @@
 	zephyr,user {
 		led-gpios = <&gpio0 15 GPIO_OPEN_SOURCE>;
 		oled-gpios = <&gpio0 31 (GPIO_ACTIVE_LOW | GPIO_OPEN_DRAIN | (1 << 8))>;
+		io-channels = <&adc 0>;
+		pot-gpios = <&gpio1 13 (GPIO_ACTIVE_LOW | GPIO_OPEN_DRAIN)>;
 	};
 
 	reserved-memory {
@@ -85,14 +87,14 @@
 
     i2c0_sleep: i2c0_sleep {
         group1 {
-			psels = <NRF_PSEL(TWIM_SCL, 0, 29)>, <NRF_PSEL(TWIM_SDA, 0, 2)>;
+			psels = <NRF_PSEL(TWIM_SCL, 0, 29)>, <NRF_PSEL(TWIM_SDA, 1, 15)>;
             low-power-enable;
         };
     };
 
 	i2c0_default: i2c0_default {
 		group1 {
-			psels = <NRF_PSEL(TWIM_SCL, 0, 29)>, <NRF_PSEL(TWIM_SDA, 0, 2)>;
+			psels = <NRF_PSEL(TWIM_SCL, 0, 29)>, <NRF_PSEL(TWIM_SDA, 1, 15)>;
 		};
 	};
 };
