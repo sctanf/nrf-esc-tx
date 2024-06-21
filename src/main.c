@@ -73,18 +73,22 @@ const struct gpio_dt_spec pot_en = GPIO_DT_SPEC_GET(ZEPHYR_USER_NODE, pot_gpios)
 
 int tickrate = 5;
 
+uint8_t fan_batt;
 uint8_t batt;
 uint8_t batt_v;
 uint32_t batt_pptt;
 
 bool main_running = false;
 
-unsigned int last_pot[4] = {0,0,0,0};
+unsigned int last_pot[8] = {0,0,0,0,0,0,0,0};
 unsigned int last_batt_pptt[16] = {10001,10001,10001,10001,10001,10001,10001,10001,10001,10001,10001,10001,10001,10001,10001,10001};
 int8_t last_pot_i = 0;
 int8_t last_batt_pptt_i = 0;
 bool system_off_main = false;
 bool send_data = false;
+int64_t idle_start_time = 0;
+bool pot_idle = false;
+#define pot_idle_time_dur 10000
 
 void event_handler(struct esb_evt const *event)
 {
@@ -104,6 +108,8 @@ void event_handler(struct esb_evt const *event)
 				}
 			} else {
 				if (rx_payload.length == 4) {
+					if (rx_payload.data[0] == rx_payload.data[1])
+						fan_batt = rx_payload.data[0];
 				}
 			}
 		}
@@ -290,27 +296,30 @@ int main(void)
 
 	sys_fan_label = lv_label_create(lv_scr_act());
 	lv_label_set_text(sys_fan_label, "SYS      FAN");
-	lv_obj_align(sys_fan_label, LV_ALIGN_TOP_LEFT, -1, 0);
+//	lv_obj_align(sys_fan_label, LV_ALIGN_TOP_LEFT, -1, 0);
+	lv_obj_align(sys_fan_label, LV_ALIGN_LEFT_MID, -1, 0);
 
 	sys_bat_label = lv_label_create(lv_scr_act());
 	lv_label_set_text(sys_bat_label, "0%");
-	lv_obj_align(sys_bat_label, LV_ALIGN_TOP_RIGHT, -8*9+1, 0);
+//	lv_obj_align(sys_bat_label, LV_ALIGN_TOP_RIGHT, -8*9+1, 0);
+	lv_obj_align(sys_bat_label, LV_ALIGN_RIGHT_MID, -8*9+1, 0);
 
 	fan_bat_label = lv_label_create(lv_scr_act());
 	lv_label_set_text(fan_bat_label, "0%");
-	lv_obj_align(fan_bat_label, LV_ALIGN_TOP_RIGHT, 1, 0);
+//	lv_obj_align(fan_bat_label, LV_ALIGN_TOP_RIGHT, 1, 0);
+	lv_obj_align(fan_bat_label, LV_ALIGN_RIGHT_MID, 1, 0);
 
-	rpm_label = lv_label_create(lv_scr_act());
-	lv_label_set_text(rpm_label, "RPM");
-	lv_obj_align(rpm_label, LV_ALIGN_LEFT_MID, -1, 0);
+//	rpm_label = lv_label_create(lv_scr_act());
+//	lv_label_set_text(rpm_label, "RPM");
+//	lv_obj_align(rpm_label, LV_ALIGN_LEFT_MID, -1, 0);
 
-	rpm_value_label = lv_label_create(lv_scr_act());
-	lv_label_set_text(rpm_value_label, "0");
-	lv_obj_align(rpm_value_label, LV_ALIGN_RIGHT_MID, -8*7+1, 0);
+//	rpm_value_label = lv_label_create(lv_scr_act());
+//	lv_label_set_text(rpm_value_label, "0");
+//	lv_obj_align(rpm_value_label, LV_ALIGN_RIGHT_MID, -8*7+1, 0);
 
-	status_label = lv_label_create(lv_scr_act());
-	lv_label_set_text(status_label, "N/A");
-	lv_obj_align(status_label, LV_ALIGN_LEFT_MID, 10*9-1, 0);
+//	status_label = lv_label_create(lv_scr_act());
+//	lv_label_set_text(status_label, "N/A");
+//	lv_obj_align(status_label, LV_ALIGN_LEFT_MID, 10*9-1, 0);
 
 	pwm_bar = lv_bar_create(lv_scr_act());
     lv_obj_set_size(pwm_bar, 128, 8);
@@ -442,15 +451,15 @@ int main(void)
 		gpio_pin_set_dt(&pot_en, 0);
 		last_pot[last_pot_i] = pot_total;
 		last_pot_i++;
-		last_pot_i %= 3;
-		for (uint8_t i = 0; i < 3; i++) {  // Average battery readings across 16 samples
+		last_pot_i %= 7;
+		for (uint8_t i = 0; i < 7; i++) {  // Average pot readings across 8 samples
 			if (last_pot[i] == 0) {
 				pot_total += pot_total / (i + 1);
 			} else {
 				pot_total += last_pot[i];
 			}
 		}
-		pot_total /= 16;
+		pot_total /= 32;
 		float pot_total_out = ((float)pot_total - 200.0) / 14900.0;
 		pot_total_out -= 0.5;
 		pot_total_out *= 2;
@@ -458,6 +467,30 @@ int main(void)
 		if (pot_total_out < -32768) pot_total_out = -32768;
 		if (pot_total_out > 32767) pot_total_out = 32767;
 		raw = pot_total_out;
+
+		float idle_val = 0.07 * 32768.0;
+		float idle_exit_val = 0.08 * 32768.0;
+		if ((pot_total_out > -idle_val && pot_total_out < idle_val) && pot_idle == false)
+		{
+			pot_idle = true;
+			idle_start_time = k_uptime_get();
+		}
+		if ((pot_total_out < -idle_exit_val || pot_total_out > idle_exit_val) && pot_idle == true)
+		{
+			if (k_uptime_get() > idle_start_time + pot_idle_time_dur) sys_reboot(SYS_REBOOT_COLD);
+			pot_idle = false;
+		}
+
+		if (pot_idle) 
+		{
+//			raw = 0;
+			tickrate = 50;
+		}
+		else
+		{
+			tickrate = 5;
+		}
+
 		asp.calibrate = false;
 		tx_payload.data[0] = (raw >> 8) & 0xff;
 		tx_payload.data[1] = raw & 0xff;
@@ -467,20 +500,28 @@ int main(void)
 		esb_write_payload(&tx_payload); // Add transmission to queue
 		esb_start_tx();
 
-	    lv_obj_set_style_base_dir(pwm_bar, (raw > 0) ? LV_BASE_DIR_LTR : LV_BASE_DIR_RTL, 0);
-    	lv_bar_set_value(pwm_bar, abs(raw), LV_ANIM_OFF);
+		if (pot_idle && k_uptime_get() > idle_start_time + pot_idle_time_dur) {
+			gpio_pin_set_dt(&oled, false);
+		}
+		else
+		{
+//			gpio_pin_set_dt(&oled, true);
 
-		sprintf(count_str, "%d%%", batt);
-		lv_label_set_text(sys_bat_label, count_str);
+		    lv_obj_set_style_base_dir(pwm_bar, (raw > 0) ? LV_BASE_DIR_LTR : LV_BASE_DIR_RTL, 0);
+	    	lv_bar_set_value(pwm_bar, abs(raw), LV_ANIM_OFF);
 
-		sprintf(count_str, "%d%%", count%101);
-		lv_label_set_text(fan_bat_label, count_str);
+			sprintf(count_str, "%d%%", batt);
+			lv_label_set_text(sys_bat_label, count_str);
 
-		sprintf(count_str, "%d", abs((int64_t)((float)raw*110000/32767)));
-		lv_label_set_text(rpm_value_label, count_str);
+			sprintf(count_str, "%d%%", fan_batt);
+			lv_label_set_text(fan_bat_label, count_str);
 
-		lv_task_handler();
-		++count;
+//			sprintf(count_str, "%d", abs((int64_t)((float)raw*110000/32767)));
+//			lv_label_set_text(rpm_value_label, count_str);
+
+			lv_task_handler();
+//			++count;
+		}
 
 		// Get time elapsed and sleep/yield until next tick
 		int64_t time_delta = k_uptime_get() - time_begin;
