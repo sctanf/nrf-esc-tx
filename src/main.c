@@ -88,6 +88,7 @@ bool system_off_main = false;
 bool send_data = false;
 int64_t idle_start_time = 0;
 bool pot_idle = false;
+int64_t last_data_sent = 0;
 #define pot_idle_time_dur 10000
 
 void event_handler(struct esb_evt const *event)
@@ -108,8 +109,10 @@ void event_handler(struct esb_evt const *event)
 				}
 			} else {
 				if (rx_payload.length == 4) {
-					if (rx_payload.data[0] == rx_payload.data[1])
+					if (rx_payload.data[0] == rx_payload.data[1]) {
 						fan_batt = rx_payload.data[0];
+						last_data_sent = k_uptime_get();
+					}
 				}
 			}
 		}
@@ -300,12 +303,12 @@ int main(void)
 	lv_obj_align(sys_fan_label, LV_ALIGN_LEFT_MID, -1, 0);
 
 	sys_bat_label = lv_label_create(lv_scr_act());
-	lv_label_set_text(sys_bat_label, "0%");
+	lv_label_set_text(sys_bat_label, "---");
 //	lv_obj_align(sys_bat_label, LV_ALIGN_TOP_RIGHT, -8*9+1, 0);
 	lv_obj_align(sys_bat_label, LV_ALIGN_RIGHT_MID, -8*9+1, 0);
 
 	fan_bat_label = lv_label_create(lv_scr_act());
-	lv_label_set_text(fan_bat_label, "0%");
+	lv_label_set_text(fan_bat_label, "---");
 //	lv_obj_align(fan_bat_label, LV_ALIGN_TOP_RIGHT, 1, 0);
 	lv_obj_align(fan_bat_label, LV_ALIGN_RIGHT_MID, 1, 0);
 
@@ -513,8 +516,11 @@ int main(void)
 			sprintf(count_str, "%d%%", batt);
 			lv_label_set_text(sys_bat_label, count_str);
 
-			sprintf(count_str, "%d%%", fan_batt);
-			lv_label_set_text(fan_bat_label, count_str);
+			sprintf(count_str, "%d%%", (int)fan_batt);
+			if (k_uptime_get() > last_data_sent + 500)
+				lv_label_set_text(fan_bat_label, "---");
+			else
+				lv_label_set_text(fan_bat_label, count_str);
 
 //			sprintf(count_str, "%d", abs((int64_t)((float)raw*110000/32767)));
 //			lv_label_set_text(rpm_value_label, count_str);
