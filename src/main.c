@@ -392,8 +392,8 @@ int main(void)
 		if (pot_total_out > 200) pot_total_out = 0; // but the measurement should already be zero, aka off (check from adc!!)
 		else {
 			pot_total_out /= 190;
-			pot_total_out *= 0.93;
-			pot_total_out += 0.07;
+			pot_total_out *= 0.92;
+			pot_total_out += 0.08;
 			pot_total_out *= 32767;
 			if (pot_total_out < 0.07) pot_total_out = 0.07;
 			if (pot_total_out > 32767) pot_total_out = 32767;
