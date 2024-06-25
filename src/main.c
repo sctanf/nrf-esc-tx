@@ -33,13 +33,6 @@
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/fs/nvs.h>
 
-#include <zephyr/device.h>
-#include <zephyr/drivers/display.h>
-#include <lvgl.h>
-#include <stdio.h>
-#include <string.h>
-#include <zephyr/zephyr.h>
-
 LOG_MODULE_REGISTER(main, 4);
 
 static struct nvs_fs fs;
@@ -68,8 +61,6 @@ uint8_t reset_mode = -1;
 
 #define ZEPHYR_USER_NODE DT_PATH(zephyr_user)
 const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(ZEPHYR_USER_NODE, led_gpios);
-const struct gpio_dt_spec oled = GPIO_DT_SPEC_GET(ZEPHYR_USER_NODE, oled_gpios);
-const struct gpio_dt_spec pot_en = GPIO_DT_SPEC_GET(ZEPHYR_USER_NODE, pot_gpios);
 
 int tickrate = 5;
 
@@ -225,8 +216,6 @@ static int early_init()
 {
 	reset_reason = NRF_POWER->RESETREAS;
 //	NRF_POWER->RESETREAS = NRF_POWER->RESETREAS; // Clear RESETREAS
-	gpio_pin_configure_dt(&oled, GPIO_OUTPUT);
-	gpio_pin_set_dt(&oled, 1);
 	return 0;
 }
 
@@ -243,8 +232,6 @@ int main(void)
 
 	gpio_pin_configure_dt(&led, GPIO_OUTPUT);
 	gpio_pin_set_dt(&led, 1);
-//	gpio_pin_configure_dt(&oled, GPIO_OUTPUT);
-//	gpio_pin_set_dt(&oled, 1);
 
 	struct flash_pages_info info;
 	fs.flash_device = NVS_PARTITION_DEVICE;
@@ -269,71 +256,6 @@ int main(void)
 	};
 	accp.input_positive = SAADC_CH_PSELP_PSELP_AnalogInput0;
 	adc_channel_setup(pot_adc, &accp);
-	gpio_pin_configure_dt(&pot_en, GPIO_OUTPUT);
-
-	int32_t count = 0U;
-	char count_str[16] = {0};
-	const struct device *display_dev;
-	lv_obj_t *sys_fan_label;
-	lv_obj_t *sys_bat_label;
-	lv_obj_t *fan_bat_label;
-	lv_obj_t *rpm_label;
-	lv_obj_t *rpm_value_label;
-	lv_obj_t *status_label;
-	lv_obj_t *pwm_bar;
-
-	static lv_style_t styleIndicatorBar;
-	lv_style_init(&styleIndicatorBar);
-	lv_style_set_bg_opa(&styleIndicatorBar, LV_OPA_COVER);
-	lv_style_set_bg_color(&styleIndicatorBar, lv_color_white());
-
-	display_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_display));
-	if (!device_is_ready(display_dev)) {
-		k_sleep(K_MSEC(1000));
-		sys_reboot(SYS_REBOOT_COLD);
-	}
-
-	lv_disp_set_bg_color(lv_disp_get_default(), lv_color_black());
-	lv_obj_set_style_bg_color(lv_scr_act(), lv_color_white(), LV_PART_MAIN);
-	lv_obj_set_style_text_color(lv_scr_act(), lv_color_white(), LV_PART_MAIN);
-
-	sys_fan_label = lv_label_create(lv_scr_act());
-	lv_label_set_text(sys_fan_label, "SYS      FAN");
-//	lv_obj_align(sys_fan_label, LV_ALIGN_TOP_LEFT, -1, 0);
-	lv_obj_align(sys_fan_label, LV_ALIGN_LEFT_MID, -1, 0);
-
-	sys_bat_label = lv_label_create(lv_scr_act());
-	lv_label_set_text(sys_bat_label, "---");
-//	lv_obj_align(sys_bat_label, LV_ALIGN_TOP_RIGHT, -8*9+1, 0);
-	lv_obj_align(sys_bat_label, LV_ALIGN_RIGHT_MID, -8*9+1, 0);
-
-	fan_bat_label = lv_label_create(lv_scr_act());
-	lv_label_set_text(fan_bat_label, "---");
-//	lv_obj_align(fan_bat_label, LV_ALIGN_TOP_RIGHT, 1, 0);
-	lv_obj_align(fan_bat_label, LV_ALIGN_RIGHT_MID, 1, 0);
-
-//	rpm_label = lv_label_create(lv_scr_act());
-//	lv_label_set_text(rpm_label, "RPM");
-//	lv_obj_align(rpm_label, LV_ALIGN_LEFT_MID, -1, 0);
-
-//	rpm_value_label = lv_label_create(lv_scr_act());
-//	lv_label_set_text(rpm_value_label, "0");
-//	lv_obj_align(rpm_value_label, LV_ALIGN_RIGHT_MID, -8*7+1, 0);
-
-//	status_label = lv_label_create(lv_scr_act());
-//	lv_label_set_text(status_label, "N/A");
-//	lv_obj_align(status_label, LV_ALIGN_LEFT_MID, 10*9-1, 0);
-
-	pwm_bar = lv_bar_create(lv_scr_act());
-    lv_obj_set_size(pwm_bar, 128, 8);
-	lv_bar_set_range(pwm_bar, 0, 32767);
-    lv_obj_set_style_base_dir(pwm_bar, LV_BASE_DIR_RTL, 0);
-    lv_bar_set_value(pwm_bar, 0, LV_ANIM_OFF);
-	lv_obj_align(pwm_bar, LV_ALIGN_BOTTOM_MID, 0, 0);
-	lv_obj_add_style(pwm_bar, &styleIndicatorBar, LV_PART_INDICATOR);
-
-	lv_task_handler();
-	display_blanking_off(display_dev);
 
 	if (reset_reason & 0x01) { // Count pin resets
 		nvs_read(&fs, RBT_CNT_ID, &reboot_counter, sizeof(reboot_counter));
@@ -444,14 +366,18 @@ int main(void)
 		else {batt_pptt = last_batt_pptt[15];} // Effectively 100-10000 -> 1-100%
 		int batt = (int)((float)batt_pptt/100.0);
 
-		gpio_pin_set_dt(&pot_en, 1);
 		adc_channel_setup(pot_adc, &accp);
 		uint64_t pot_total = 0;
 		for (int i = 0; i < 4; i++) {
 			adc_read(pot_adc, &asp);
-			pot_total += raw;
+			int32_t val = raw;
+			adc_raw_to_millivolts(adc_ref_internal(pot_adc),
+					      accp.gain,
+					      asp.resolution,
+					      &val);
+			//pot_total += raw;
+			pot_total += val;
 		}
-		gpio_pin_set_dt(&pot_en, 0);
 		last_pot[last_pot_i] = pot_total;
 		last_pot_i++;
 		last_pot_i %= 7;
@@ -462,12 +388,11 @@ int main(void)
 				pot_total += last_pot[i];
 			}
 		}
-		pot_total /= 32;
-		float pot_total_out = ((float)pot_total - 200.0) / 14900.0;
-		pot_total_out -= 0.5;
-		pot_total_out *= 2;
+		float pot_total_out = 3300.0 * 10.0 / ((float)pot_total / 32.0) - 10.0;
+		if (pot_total_out > 200) pot_total_out = 0; // but the measurement should already be zero, aka off (check from adc!!)
+		pot_total_out /= 190;
 		pot_total_out *= 32767;
-		if (pot_total_out < -32768) pot_total_out = -32768;
+		if (pot_total_out < 0) pot_total_out = 0; // no reverse
 		if (pot_total_out > 32767) pot_total_out = 32767;
 		raw = pot_total_out;
 
@@ -480,18 +405,19 @@ int main(void)
 		}
 		if ((pot_total_out < -idle_exit_val || pot_total_out > idle_exit_val) && pot_idle == true)
 		{
-			if (k_uptime_get() > idle_start_time + pot_idle_time_dur) sys_reboot(SYS_REBOOT_COLD);
 			pot_idle = false;
 		}
 
-		if (pot_idle) 
+		if (pot_idle) // TODO use this pin to turn on/off device, if pulled to vcc turn on, if ~0v turn off
 		{
 //			raw = 0;
 			tickrate = 50;
+			gpio_pin_set_dt(&led, 0);
 		}
 		else
 		{
 			tickrate = 5;
+			gpio_pin_set_dt(&led, 1);
 		}
 
 		asp.calibrate = false;
@@ -499,35 +425,11 @@ int main(void)
 		tx_payload.data[1] = raw & 0xff;
 		tx_payload.data[2] = (raw >> 8) & 0xff;
 		tx_payload.data[3] = raw & 0xff;
+//		tx_payload.data[4] = batt;
+//		tx_payload.data[5] = batt;
 		esb_flush_tx();
 		esb_write_payload(&tx_payload); // Add transmission to queue
 		esb_start_tx();
-
-		if (pot_idle && k_uptime_get() > idle_start_time + pot_idle_time_dur) {
-			gpio_pin_set_dt(&oled, false);
-		}
-		else
-		{
-//			gpio_pin_set_dt(&oled, true);
-
-		    lv_obj_set_style_base_dir(pwm_bar, (raw > 0) ? LV_BASE_DIR_LTR : LV_BASE_DIR_RTL, 0);
-	    	lv_bar_set_value(pwm_bar, abs(raw), LV_ANIM_OFF);
-
-			sprintf(count_str, "%d%%", batt);
-			lv_label_set_text(sys_bat_label, count_str);
-
-			sprintf(count_str, "%d%%", (int)fan_batt);
-			if (k_uptime_get() > last_data_sent + 500)
-				lv_label_set_text(fan_bat_label, "---");
-			else
-				lv_label_set_text(fan_bat_label, count_str);
-
-//			sprintf(count_str, "%d", abs((int64_t)((float)raw*110000/32767)));
-//			lv_label_set_text(rpm_value_label, count_str);
-
-			lv_task_handler();
-//			++count;
-		}
 
 		// Get time elapsed and sleep/yield until next tick
 		int64_t time_delta = k_uptime_get() - time_begin;
