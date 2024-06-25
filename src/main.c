@@ -390,14 +390,18 @@ int main(void)
 		}
 		float pot_total_out = 3300.0 * 10.0 / ((float)pot_total / 32.0) - 10.0;
 		if (pot_total_out > 200) pot_total_out = 0; // but the measurement should already be zero, aka off (check from adc!!)
-		pot_total_out /= 190;
-		pot_total_out *= 32767;
-		if (pot_total_out < 0) pot_total_out = 0; // no reverse
-		if (pot_total_out > 32767) pot_total_out = 32767;
+		else {
+			pot_total_out /= 190;
+			pot_total_out *= 0.93;
+			pot_total_out += 0.07;
+			pot_total_out *= 32767;
+			if (pot_total_out < 0.07) pot_total_out = 0.07;
+			if (pot_total_out > 32767) pot_total_out = 32767;
+		}
 		raw = pot_total_out;
 
-		float idle_val = 0.07 * 32768.0;
-		float idle_exit_val = 0.08 * 32768.0;
+		float idle_val = 0.05 * 32768.0;
+		float idle_exit_val = 0.05 * 32768.0;
 		if ((pot_total_out > -idle_val && pot_total_out < idle_val) && pot_idle == false)
 		{
 			pot_idle = true;
