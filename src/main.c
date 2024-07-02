@@ -368,6 +368,7 @@ int main(void)
 
 		adc_channel_setup(pot_adc, &accp);
 		uint64_t pot_total = 0;
+		float pot_total_out = 0;
 		for (int i = 0; i < 4; i++) {
 			adc_read(pot_adc, &asp);
 			int32_t val = raw;
@@ -376,6 +377,9 @@ int main(void)
 					      asp.resolution,
 					      &val);
 			//pot_total += raw;
+			if (val < 5) {
+				goto off; // skip, the value is off
+			}
 			pot_total += val;
 		}
 		last_pot[last_pot_i] = pot_total;
@@ -388,7 +392,7 @@ int main(void)
 				pot_total += last_pot[i];
 			}
 		}
-		float pot_total_out = 3300.0 * 10.0 / ((float)pot_total / 32.0) - 10.0;
+		pot_total_out = 3300.0 * 10.0 / ((float)pot_total / 32.0) - 10.0;
 		if (pot_total_out > 200) pot_total_out = 0; // but the measurement should already be zero, aka off (check from adc!!)
 		else {
 			pot_total_out /= 190;
@@ -398,6 +402,7 @@ int main(void)
 			if (pot_total_out < 0.07) pot_total_out = 0.07;
 			if (pot_total_out > 32767) pot_total_out = 32767;
 		}
+off:
 		raw = pot_total_out;
 
 		float idle_val = 0.05 * 32768.0;
@@ -410,17 +415,20 @@ int main(void)
 		if ((pot_total_out < -idle_exit_val || pot_total_out > idle_exit_val) && pot_idle == true)
 		{
 			pot_idle = false;
+			idle_start_time = 0;
 		}
 
-		if (pot_idle) // TODO use this pin to turn on/off device, if pulled to vcc turn on, if ~0v turn off
+		if (idle_start_time != 0 && k_uptime_get() > idle_start_time + 1000)
 		{
 //			raw = 0;
 			tickrate = 50;
 			gpio_pin_set_dt(&led, 0);
+//				nrf_gpio_cfg_sense_set(NRF_DT_GPIOS_TO_PSEL(ZEPHYR_USER_NODE, pot_gpios), NRF_GPIO_PIN_SENSE_HIGH); // doesnt work???
+//				sys_poweroff();
 		}
 		else
 		{
-			tickrate = 5;
+//			tickrate = 5;
 			gpio_pin_set_dt(&led, 1);
 		}
 

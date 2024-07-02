@@ -25,6 +25,7 @@
 	zephyr,user {
 		led-gpios = <&gpio0 15 GPIO_OPEN_SOURCE>;
 		io-channels = <&adc 0>;
+		pot-gpios = <&gpio0 2 GPIO_OPEN_SOURCE>;
 	};
 
 	reserved-memory {
