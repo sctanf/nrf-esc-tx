@@ -426,7 +426,7 @@ off:
 		if (idle_start_time != 0 && k_uptime_get() > idle_start_time + 1000)
 		{
 //			raw = 0;
-			tickrate = 50;
+//			tickrate = 50;
 			gpio_pin_set_dt(&led, 0);
 //				nrf_gpio_cfg_sense_set(NRF_DT_GPIOS_TO_PSEL(ZEPHYR_USER_NODE, pot_gpios), NRF_GPIO_PIN_SENSE_HIGH); // doesnt work???
 
@@ -451,7 +451,7 @@ off:
 		}
 		else
 		{
-			tickrate = 5;
+//			tickrate = 5;
 			if (batt < 25 && blink < 500/tickrate) // low bat
 				gpio_pin_set_dt(&led, 0);
 			else
