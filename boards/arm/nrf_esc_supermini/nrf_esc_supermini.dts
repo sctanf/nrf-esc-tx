@@ -87,3 +87,8 @@
 &nfct {
 	status = "disabled";
 };
+
+&comp {
+	status = "okay";
+    compatible = "nordic,nrf-lpcomp";
+};

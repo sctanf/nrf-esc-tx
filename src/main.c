@@ -32,6 +32,9 @@
 #include <zephyr/drivers/flash.h>
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/fs/nvs.h>
+#include <nrfx.h>
+#include <nrfx_lpcomp.h>
+#include <hal/nrf_lpcomp.h>
 
 LOG_MODULE_REGISTER(main, 4);
 
@@ -343,6 +346,8 @@ int main(void)
 
 	tx_payload.noack = false;
 
+	int blink = 0;
+
 	while (1)
 	{
 		// Get start time
@@ -424,12 +429,35 @@ off:
 			tickrate = 50;
 			gpio_pin_set_dt(&led, 0);
 //				nrf_gpio_cfg_sense_set(NRF_DT_GPIOS_TO_PSEL(ZEPHYR_USER_NODE, pot_gpios), NRF_GPIO_PIN_SENSE_HIGH); // doesnt work???
+
+//    nrfx_lpcomp_config_t config = NRFX_LPCOMP_DEFAULT_CONFIG(NRF_LPCOMP_INPUT_0);
+//    config.detection = NRF_LPCOMP_DETECT_UP;
+//    nrfx_lpcomp_init(&config, NULL);
+//    nrfx_lpcomp_enable();
+
+//	NRF_LPCOMP->INTENSET = (LPCOMP_INTENSET_CROSS_Enabled << LPCOMP_INTENSET_CROSS_Pos);
+//	NVIC_EnableIRQ(LPCOMP_IRQn);
+//	NRF_LPCOMP->REFSEL |= (LPCOMP_REFSEL_REFSEL_SupplyFourEighthsPrescaling << LPCOMP_REFSEL_REFSEL_Pos);
+//	NRF_LPCOMP->PSEL |= (LPCOMP_PSEL_PSEL_AnalogInput0 << LPCOMP_PSEL_PSEL_Pos);
+//	NRF_LPCOMP->ANADETECT = LPCOMP_ANADETECT_ANADETECT_Cross;
+//	NRF_LPCOMP->ENABLE = LPCOMP_ENABLE_ENABLE_Enabled;	
+//	NRF_LPCOMP->TASKS_START = 1;
+
+//while(NRF_LPCOMP->EVENTS_READY == 0);
+//NRF_LPCOMP->EVENTS_READY = 0;
+
+//__WFE();
 //				sys_poweroff();
 		}
 		else
 		{
-//			tickrate = 5;
-			gpio_pin_set_dt(&led, 1);
+			tickrate = 5;
+			if (batt < 25 && blink < 500/tickrate) // low bat
+				gpio_pin_set_dt(&led, 0);
+			else
+				gpio_pin_set_dt(&led, 1);
+			blink++;
+			blink %= 1000/tickrate;
 		}
 
 		asp.calibrate = false;
